@@ -1128,7 +1128,8 @@ static std::string dispatchKeyword(eHyprCtlOutputFormat format, std::string in) 
         g_pLayoutManager->switchToLayout(*PLAYOUT); // update layout
 
     if (COMMAND.contains("decoration:screen_shader") || COMMAND == "source")
-        g_pHyprOpenGL->m_reloadScreenShader = true;
+        if (COMMAND.contains("decoration:screen_shader") || COMMAND.contains("decoration:lut") || COMMAND == "source")
+            g_pHyprOpenGL->m_reloadScreenShader = true;
 
     if (COMMAND.contains("blur") || COMMAND == "source") {
         for (auto& [m, rd] : g_pHyprOpenGL->m_monitorRenderResources) {

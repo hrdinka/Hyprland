@@ -776,6 +776,8 @@ void CHyprOpenGLImpl::begin(PHLMONITOR pMonitor, const CRegion& damage_, CFrameb
     if (m_reloadScreenShader) {
         m_reloadScreenShader = false;
         static auto PSHADER  = CConfigValue<std::string>("decoration:screen_shader");
+        static auto PLUT     = CConfigValue<std::string>("decoration:lut");
+        createLUTTexture(*PLUT);
         applyScreenShader(*PSHADER);
     }
 
@@ -1243,6 +1245,8 @@ void CHyprOpenGLImpl::applyScreenShader(const std::string& path) {
         g_pConfigManager->addParseError("Screen shader: Screen shader uses uniform 'time', which requires debug:damage_tracking to be switched off.\n"
                                         "WARNING: Disabling damage tracking will *massively* increase GPU utilization!");
     }
+    m_finalScreenShader.lut       = glGetUniformLocation(m_finalScreenShader.program, "lut");
+    m_finalScreenShader.lutSize   = glGetUniformLocation(m_finalScreenShader.program, "lut_size");
     m_finalScreenShader.texAttrib = glGetAttribLocation(m_finalScreenShader.program, "texcoord");
     m_finalScreenShader.posAttrib = glGetAttribLocation(m_finalScreenShader.program, "pos");
 }
@@ -1593,6 +1597,7 @@ void CHyprOpenGLImpl::renderTextureInternalWithDamage(SP<CTexture> tex, const CB
     glUniformMatrix3fv(shader->proj, 1, GL_FALSE, glMatrix.getMatrix().data());
 #endif
     glUniform1i(shader->tex, 0);
+    glUniform1i(shader->lut, 2);
 
     if ((usingFinalShader && *PDT == 0) || CRASHING) {
         glUniform1f(shader->time, m_globalTimer.getSeconds() - shader->initialTime);
@@ -1605,6 +1610,8 @@ void CHyprOpenGLImpl::renderTextureInternalWithDamage(SP<CTexture> tex, const CB
         glUniform1i(shader->wl_output, m_renderData.pMonitor->m_id);
     if (usingFinalShader && shader->fullSize != -1)
         glUniform2f(shader->fullSize, m_renderData.pMonitor->m_pixelSize.x, m_renderData.pMonitor->m_pixelSize.y);
+    if (usingFinalShader && shader->lutSize != -1)
+        glUniform2f(shader->lutSize, m_pLUTTexture->m_size.x, m_pLUTTexture->m_size.y);
 
     if (CRASHING) {
         glUniform1f(shader->distort, g_pHyprRenderer->m_crashingDistort);
@@ -2898,6 +2905,46 @@ void CHyprOpenGLImpl::ensureBackgroundTexturePresence() {
 
         m_backgroundTexture = loadAsset(texPath);
     }
+}
+
+void CHyprOpenGLImpl::createLUTTexture(const std::string& path) {
+    const std::string texPath = absolutePath(path, g_pConfigManager->getMainConfigPath());
+
+    Debug::log(LOG, "Creating LUT from {}", texPath);
+
+    const auto CAIROSURFACE = cairo_image_surface_create_from_png(texPath.c_str());
+    const auto CAIROFORMAT  = cairo_image_surface_get_format(CAIROSURFACE);
+
+    m_pLUTTexture = makeShared<CTexture>();
+
+    m_pLUTTexture->allocate();
+    m_pLUTTexture->m_size = {cairo_image_surface_get_width(CAIROSURFACE), cairo_image_surface_get_height(CAIROSURFACE)};
+
+    const GLint glIFormat = CAIROFORMAT == CAIRO_FORMAT_RGB96F ?
+#ifdef GLES2
+        GL_RGB32F_EXT :
+#else
+        GL_RGB32F :
+#endif
+        GL_RGBA;
+    const GLint glFormat = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_RGB : GL_RGBA;
+    const GLint glType   = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+
+    const auto  DATA = cairo_image_surface_get_data(CAIROSURFACE);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_pLUTTexture->m_texID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+#ifndef GLES2
+    if (CAIROFORMAT != CAIRO_FORMAT_RGB96F) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
+    }
+#endif
+    glTexImage2D(GL_TEXTURE_2D, 0, glIFormat, m_pLUTTexture->m_size.x, m_pLUTTexture->m_size.y, 0, glFormat, glType, DATA);
+
+    cairo_surface_destroy(CAIROSURFACE);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 void CHyprOpenGLImpl::createBGTextureForMonitor(PHLMONITOR pMonitor) {

@@ -317,6 +317,7 @@ class CHyprOpenGLImpl {
     SP<CTexture>            m_lockDeadTexture;
     SP<CTexture>            m_lockDead2Texture;
     SP<CTexture>            m_lockTtyTextTexture; // TODO: don't always load lock
+    SP<CTexture>            m_pLUTTexture;
 
     void                    logShaderError(const GLuint&, bool program = false, bool silent = false);
     GLuint                  createProgram(const std::string&, const std::string&, bool dynamic = false, bool silent = false);
@@ -327,6 +328,7 @@ class CHyprOpenGLImpl {
     EGLDeviceEXT            eglDeviceFromDRMFD(int drmFD);
     void                    initAssets();
     void                    initMissingAssetTexture();
+    void                    createLUTTexture(const std::string& path);
 
     //
     std::optional<std::vector<uint64_t>> getModsForFormat(EGLint format);

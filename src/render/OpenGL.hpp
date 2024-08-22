@@ -305,7 +305,7 @@ class CHyprOpenGLImpl {
     EGLDeviceEXT            eglDeviceFromDRMFD(int drmFD);
     void                    initAssets();
     void                    initMissingAssetTexture();
-    void                    createLUTTexture();
+    void                    createLUTTexture(const std::string& path);
 
     //
     std::optional<std::vector<uint64_t>> getModsForFormat(EGLint format);

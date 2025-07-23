@@ -341,11 +341,13 @@ class CHyprOpenGLImpl {
     SP<CTexture>                  m_lockDeadTexture;
     SP<CTexture>                  m_lockDead2Texture;
     SP<CTexture>                  m_lockTtyTextTexture;
+    SP<CTexture>                  m_pLUTTexture;
     SShader                       m_finalScreenShader;
     CTimer                        m_globalTimer;
     GLuint                        m_currentProgram;
 
     void                          logShaderError(const GLuint&, bool program = false, bool silent = false);
+    void                          createLUTTexture(const std::string&);
     void                          createBGTextureForMonitor(PHLMONITOR);
     void                          initDRMFormats();
     void                          initEGL(bool gbm);

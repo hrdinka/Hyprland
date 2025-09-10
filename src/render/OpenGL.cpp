@@ -835,6 +835,8 @@ void CHyprOpenGLImpl::begin(PHLMONITOR pMonitor, const CRegion& damage_, CFrameb
     if (m_reloadScreenShader) {
         m_reloadScreenShader = false;
         static auto PSHADER  = CConfigValue<std::string>("decoration:screen_shader");
+        static auto PLUT     = CConfigValue<std::string>("decoration:lut");
+        createLUTTexture(*PLUT);
         applyScreenShader(*PSHADER);
     }
 
@@ -1312,6 +1314,8 @@ void CHyprOpenGLImpl::applyScreenShader(const std::string& path) {
     m_finalScreenShader.uniformLocations[SHADER_FULL_SIZE] = glGetUniformLocation(m_finalScreenShader.program, "screen_size");
     if (m_finalScreenShader.uniformLocations[SHADER_FULL_SIZE] == -1)
         m_finalScreenShader.uniformLocations[SHADER_FULL_SIZE] = glGetUniformLocation(m_finalScreenShader.program, "screenSize");
+    m_finalScreenShader.uniformLocations[SHADER_LUT]        = glGetUniformLocation(m_finalScreenShader.program, "lut");
+    m_finalScreenShader.uniformLocations[SHADER_LUT_SIZE]   = glGetUniformLocation(m_finalScreenShader.program, "lut_size");
     m_finalScreenShader.uniformLocations[SHADER_TEX_ATTRIB] = glGetAttribLocation(m_finalScreenShader.program, "texcoord");
     m_finalScreenShader.uniformLocations[SHADER_POS_ATTRIB] = glGetAttribLocation(m_finalScreenShader.program, "pos");
 
@@ -1722,6 +1726,7 @@ void CHyprOpenGLImpl::renderTextureInternal(SP<CTexture> tex, const CBox& box, c
 
     shader->setUniformMatrix3fv(SHADER_PROJ, 1, GL_TRUE, glMatrix.getMatrix());
     shader->setUniformInt(SHADER_TEX, 0);
+    shader->setUniformInt(SHADER_LUT, 2);
 
     if ((usingFinalShader && *PDT == 0) || CRASHING)
         shader->setUniformFloat(SHADER_TIME, m_globalTimer.getSeconds() - shader->initialTime);
@@ -1737,6 +1742,7 @@ void CHyprOpenGLImpl::renderTextureInternal(SP<CTexture> tex, const CBox& box, c
         shader->setUniformInt(SHADER_POINTER_SHAPE, g_pHyprRenderer->m_lastCursorData.shape);
         shader->setUniformInt(SHADER_POINTER_SHAPE_PREVIOUS, g_pHyprRenderer->m_lastCursorData.shapePrevious);
         shader->setUniformFloat(SHADER_POINTER_SIZE, g_pCursorManager->getScaledSize());
+        shader->setUniformFloat2(SHADER_LUT_SIZE, m_pLUTTexture->m_size.x, m_pLUTTexture->m_size.y);
     }
 
     if (usingFinalShader && *PDT == 0) {
@@ -3208,6 +3214,46 @@ void CHyprOpenGLImpl::clearWithTex() {
         data.tex          = TEXIT->second.getTexture();
         g_pHyprRenderer->m_renderPass.add(makeUnique<CTexPassElement>(std::move(data)));
     }
+}
+
+void CHyprOpenGLImpl::createLUTTexture(const std::string& path) {
+    const std::string texPath = absolutePath(path, g_pConfigManager->getMainConfigPath());
+
+    Debug::log(LOG, "Creating LUT from {}", texPath);
+
+    const auto CAIROSURFACE = cairo_image_surface_create_from_png(texPath.c_str());
+    const auto CAIROFORMAT  = cairo_image_surface_get_format(CAIROSURFACE);
+
+    m_pLUTTexture = makeShared<CTexture>();
+
+    m_pLUTTexture->allocate();
+    m_pLUTTexture->m_size = {cairo_image_surface_get_width(CAIROSURFACE), cairo_image_surface_get_height(CAIROSURFACE)};
+
+    const GLint glIFormat = CAIROFORMAT == CAIRO_FORMAT_RGB96F ?
+#ifdef GLES2
+        GL_RGB32F_EXT :
+#else
+        GL_RGB32F :
+#endif
+        GL_RGBA;
+    const GLint glFormat = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_RGB : GL_RGBA;
+    const GLint glType   = CAIROFORMAT == CAIRO_FORMAT_RGB96F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+
+    const auto  DATA = cairo_image_surface_get_data(CAIROSURFACE);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_pLUTTexture->m_texID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+#ifndef GLES2
+    if (CAIROFORMAT != CAIRO_FORMAT_RGB96F) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, GL_BLUE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, GL_RED);
+    }
+#endif
+    glTexImage2D(GL_TEXTURE_2D, 0, glIFormat, m_pLUTTexture->m_size.x, m_pLUTTexture->m_size.y, 0, glFormat, glType, DATA);
+
+    cairo_surface_destroy(CAIROSURFACE);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 void CHyprOpenGLImpl::destroyMonitorResources(PHLMONITORREF pMonitor) {

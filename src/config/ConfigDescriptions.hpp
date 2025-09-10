@@ -274,6 +274,12 @@ inline static const std::vector<SConfigOptionDescription> CONFIG_OPTIONS = {
         .data        = SConfigOptionDescription::SStringData{""}, //##TODO UNSET?
     },
     SConfigOptionDescription{
+        .value       = "decoration:lut",
+        .description = "a path to a custom texture to be supplied to the screen_shader.",
+        .type        = CONFIG_OPTION_STRING_LONG,
+        .data        = SConfigOptionDescription::SStringData{""}, //##TODO UNSET?
+    },
+    SConfigOptionDescription{
         .value       = "decoration:border_part_of_window",
         .description = "whether the border should be treated as a part of the window.",
         .type        = CONFIG_OPTION_BOOL,
